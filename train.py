@@ -1,4 +1,4 @@
-from agent import RandomAgent
+from agent import DQNAgent
 from snake import Game
 
 EPISODES = 10_000
@@ -11,7 +11,7 @@ def main():
         seed=81,
     )
 
-    agent = RandomAgent(seed=37)
+    agent = DQNAgent(seed=37)
 
     scores: list[int] = []
 
@@ -40,6 +40,8 @@ def main():
 
             if terminated or truncated:
                 break
+
+        agent.end_episode()
 
         scores.append(game.score)
 

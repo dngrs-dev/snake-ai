@@ -1,7 +1,7 @@
 from agent import DQNAgent
 from snake import Game
 
-EPISODES = 10_000
+EPISODES = 5_000
 
 
 def main():
@@ -14,10 +14,6 @@ def main():
     agent = DQNAgent(seed=37)
 
     scores: list[int] = []
-
-    collisions = 0
-    truncations = 0
-    wins = 0
 
     for episode in range(EPISODES):
         state = game.reset()
@@ -45,30 +41,17 @@ def main():
 
         scores.append(game.score)
 
-        if game.won:
-            wins += 1
-        elif truncated:
-            truncations += 1
-        elif terminated:
-            collisions += 1
-
-        if (episode + 1) % 1000 == 0:
-            recent_scores = scores[-1000:]
+        if (episode + 1) % 100 == 0:
+            recent_scores = scores[-100:]
 
             print(
                 f"Episode: {episode + 1:>5} | "
+                f"Score: {game.score:>3} | "
                 f"Average score: {sum(recent_scores) / len(recent_scores)} | "
-                f"Best: {max(scores)}"
+                f"Best: {max(scores)} | "
+                f"Epsilon: {agent.epsilon} | "
+                f"Memory: {len(agent.memory)} | "
             )
-
-    print()
-    print("Finished")
-    print(f"Episodes: {EPISODES}")
-    print(f"Avg score: {sum(scores) / len(scores)}")
-    print(f"Best score: {max(scores)}")
-    print(f"Collisions: {collisions}")
-    print(f"Truncations: {truncations}")
-    print(f"Wins: {wins}")
 
 
 if __name__ == "__main__":

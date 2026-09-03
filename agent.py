@@ -69,6 +69,7 @@ class DQNAgent:
         )
 
         self.loss_function = nn.SmoothL1Loss()
+        self.last_loss: float | None = None
 
     def encode_state(self, state: dict[str, Any]) -> np.ndarray:
         head = state["snake_head"]
@@ -187,7 +188,7 @@ class DQNAgent:
 
         batch = self.sample_batch(self.batch_size)
 
-        self._train_batch(batch)
+        self.last_loss = self._train_batch(batch)
 
         self.training_steps += 1
 
@@ -197,7 +198,7 @@ class DQNAgent:
     def _train_batch(
         self,
         batch: list[Experience],
-    ) -> None:
+    ) -> float:
         states = torch.tensor(
             np.array([experience.state for experience in batch]),
             dtype=torch.float32,
@@ -238,11 +239,22 @@ class DQNAgent:
         ).squeeze(1)
 
         with torch.no_grad():
-            next_q_values = self.target_model(next_states)
+            # Select the best action.
+            next_policy_q_values = self.policy_model(next_states)
 
-            max_next_q_values = next_q_values.max(dim=1).values
+            next_actions = next_policy_q_values.argmax(
+                dim=1,
+                keepdim=True,
+            )
 
-            target_q_values = rewards + self.gamma * max_next_q_values * (
+            # Evaluate that action.
+            next_target_q_values = self.target_model(next_states)
+
+            selected_next_q_values = next_target_q_values.gather(
+                1, next_actions
+            ).squeeze(1)
+
+            target_q_values = rewards + self.gamma * selected_next_q_values * (
                 1 - terminated
             )
 
@@ -262,6 +274,8 @@ class DQNAgent:
         )
 
         self.optimizer.step()
+
+        return loss.item()
 
     def _update_target_model(self) -> None:
         self.target_model.load_state_dict(self.policy_model.state_dict())

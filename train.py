@@ -56,6 +56,7 @@ def main():
                 f"Average score: {sum(recent_scores) / len(recent_scores)} | "
                 f"Best: {max(scores)} | "
                 f"Epsilon: {agent.epsilon} | "
+                f"Loss: {agent.last_loss} | "
                 f"Memory: {len(agent.memory)} | "
             )
 

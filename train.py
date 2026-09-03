@@ -2,6 +2,7 @@ from agent import DQNAgent
 from snake import Game
 
 EPISODES = 5_000
+SAVE_EVERY = 500
 
 
 def main():
@@ -21,7 +22,12 @@ def main():
         while True:
             action = agent.choose_action(state)
 
-            next_state, reward, terminated, truncated = game.step(action)
+            (
+                next_state,
+                reward,
+                terminated,
+                truncated,
+            ) = game.step(action)
 
             agent.learn(
                 state=state,
@@ -52,6 +58,11 @@ def main():
                 f"Epsilon: {agent.epsilon} | "
                 f"Memory: {len(agent.memory)} | "
             )
+
+        if (episode + 1) % SAVE_EVERY == 0:
+            agent.save(f"checkpoints/snake_{episode + 1}.pt")
+
+    agent.save("checkpoints/snake_final.pt")
 
 
 if __name__ == "__main__":

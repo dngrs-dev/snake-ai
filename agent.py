@@ -1,6 +1,7 @@
 import random
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -32,6 +33,7 @@ class DQNAgent:
         epsilon_start: float = 1.0,
         epsilon_end: float = 0.05,
         epsilon_decay: float = 0.995,
+        target_update_frequency: int = 1000,
     ):
         self.rng = random.Random(seed)
 
@@ -49,17 +51,24 @@ class DQNAgent:
         self.epsilon_decay = epsilon_decay
 
         self.games_played = 0
+        self.training_steps = 0
+
+        self.target_update_frequency = target_update_frequency
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.model = DQN().to(self.device)
+        self.policy_model = DQN().to(self.device)
+        self.target_model = DQN().to(self.device)
+
+        self.target_model.load_state_dict(self.policy_model.state_dict())
+        self.target_model.eval()
 
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(),
+            self.policy_model.parameters(),
             lr=learning_rate,
         )
 
-        self.loss_function = nn.MSELoss()
+        self.loss_function = nn.SmoothL1Loss()
 
     def encode_state(self, state: dict[str, Any]) -> np.ndarray:
         head = state["snake_head"]
@@ -103,10 +112,10 @@ class DQNAgent:
             device=self.device,
         ).unsqueeze(0)
 
-        self.model.eval()
+        self.policy_model.eval()
 
         with torch.no_grad():
-            q_values = self.model(state_tensor)
+            q_values = self.policy_model(state_tensor)
 
         action_index = int(torch.argmax(q_values, dim=1).item())
 
@@ -132,14 +141,20 @@ class DQNAgent:
 
         self.memory.append(experience)
 
-    def sample_batch(self, batch_size: int) -> list[Experience]:
+    def sample_batch(
+        self,
+        batch_size: int,
+    ) -> list[Experience]:
         if batch_size > len(self.memory):
             raise ValueError(
                 f"Cannot sample {batch_size} experiences "
                 f"from memory containing {len(self.memory)} experiences."
             )
 
-        return self.rng.sample(list(self.memory), batch_size)
+        return self.rng.sample(
+            list(self.memory),
+            batch_size,
+        )
 
     def end_episode(self) -> None:
         self.games_played += 1
@@ -174,7 +189,15 @@ class DQNAgent:
 
         self._train_batch(batch)
 
-    def _train_batch(self, batch: list[Experience]) -> None:
+        self.training_steps += 1
+
+        if self.training_steps % self.target_update_frequency == 0:
+            self._update_target_model()
+
+    def _train_batch(
+        self,
+        batch: list[Experience],
+    ) -> None:
         states = torch.tensor(
             np.array([experience.state for experience in batch]),
             dtype=torch.float32,
@@ -205,9 +228,9 @@ class DQNAgent:
             device=self.device,
         )
 
-        self.model.train()
+        self.policy_model.train()
 
-        all_q_values = self.model(states)
+        all_q_values = self.policy_model(states)
 
         current_q_values = all_q_values.gather(
             1,
@@ -215,7 +238,7 @@ class DQNAgent:
         ).squeeze(1)
 
         with torch.no_grad():
-            next_q_values = self.model(next_states)
+            next_q_values = self.target_model(next_states)
 
             max_next_q_values = next_q_values.max(dim=1).values
 
@@ -232,4 +255,51 @@ class DQNAgent:
 
         loss.backward()
 
+        # Protect against large updates.
+        torch.nn.utils.clip_grad_norm_(
+            self.policy_model.parameters(),
+            max_norm=10.0,
+        )
+
         self.optimizer.step()
+
+    def _update_target_model(self) -> None:
+        self.target_model.load_state_dict(self.policy_model.state_dict())
+
+    def save(self, path: str | Path) -> None:
+        path = Path(path)
+
+        path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        checkpoint = {
+            "policy_model": self.policy_model.state_dict(),
+            "target_model": self.target_model.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "epsilon": self.epsilon,
+            "games_played": self.games_played,
+            "training_steps": self.training_steps,
+        }
+
+        torch.save(checkpoint, path)
+
+    def load(self, path: str | Path) -> None:
+        checkpoint = torch.load(
+            path,
+            map_location=self.device,
+            weights_only=False,
+        )
+
+        self.policy_model.load_state_dict(checkpoint["policy_model"])
+
+        self.target_model.load_state_dict(checkpoint["target_model"])
+
+        self.optimizer.load_state_dict(checkpoint["optimizer"])
+
+        self.epsilon = checkpoint["epsilon"]
+        self.games_played = checkpoint["games_played"]
+        self.training_steps = checkpoint["training_steps"]
+
+        self.target_model.eval()

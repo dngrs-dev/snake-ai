@@ -1,27 +1,80 @@
+import argparse
+from pathlib import Path
+
 from agent import DQNAgent
+from checkpoint_utils import load_agent_checkpoint
 from renderer import GameRenderer
 from snake import Game
 
-CHECKPOINT = "checkpoints/snake_500.pt"
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Watch a trained Snake agent play.")
+
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        help=(
+            "Checkpoint to load. If omitted, the latest checkpoint "
+            "from --checkpoint-dir is used."
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        default=Path("checkpoints"),
+        help="Directory containing checkpoints (default: checkpoints).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional game seed.",
+    )
+    parser.add_argument(
+        "--fps",
+        type=int,
+        default=8,
+        help="Rendering speed (default: 8).",
+    )
+
+    arguments = parser.parse_args()
+
+    if arguments.fps <= 0:
+        parser.error("--fps must be greater than zero")
+
+    return arguments
 
 
-def main():
+def main() -> None:
+    arguments = parse_arguments()
+
     game = Game(
         width=10,
         height=10,
-        seed=123,
+        seed=arguments.seed,
     )
 
     agent = DQNAgent()
 
-    agent.load(CHECKPOINT)
+    checkpoint_path = load_agent_checkpoint(
+        agent,
+        checkpoint=arguments.checkpoint,
+        checkpoint_dir=arguments.checkpoint_dir,
+        required=True,
+    )
 
+    # Disable exploration during evaluation.
     agent.epsilon = 0.0
+    agent.policy_model.eval()
+
+    print(f"Loaded checkpoint: {checkpoint_path}")
+    print(f"Training episodes: {agent.games_played}")
+    print(f"Training steps: {agent.training_steps}")
 
     renderer = GameRenderer(
         game=game,
         cell_size=40,
-        fps=8,
+        fps=arguments.fps,
     )
 
     try:
@@ -39,13 +92,11 @@ def main():
                 action = agent.choose_action(state)
 
                 (
-                    next_state,
-                    _,
-                    _,
-                    _,
+                    state,
+                    _reward,
+                    _terminated,
+                    _truncated,
                 ) = game.step(action)
-
-                state = next_state
 
                 renderer.render()
 

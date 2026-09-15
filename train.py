@@ -2,6 +2,10 @@ import argparse
 from pathlib import Path
 
 from agent import DQNAgent
+from checkpoint_utils import (
+    load_agent_checkpoint,
+    save_agent_checkpoint,
+)
 from snake import Game
 
 
@@ -58,22 +62,7 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def find_latest_checkpoint(checkpoint_dir: Path) -> Path | None:
-    if not checkpoint_dir.exists():
-        return None
-
-    checkpoints = [path for path in checkpoint_dir.glob("*.pt") if path.is_file()]
-
-    if not checkpoints:
-        return None
-
-    return max(
-        checkpoints,
-        key=lambda path: path.stat().st_mtime_ns,
-    )
-
-
-def load_checkpoint(
+def restore_training(
     agent: DQNAgent,
     arguments: argparse.Namespace,
 ) -> Path | None:
@@ -81,39 +70,21 @@ def load_checkpoint(
         print("Forced fresh start. Existing checkpoints will be ignored.")
         return None
 
-    if arguments.checkpoint is not None:
-        checkpoint = arguments.checkpoint
+    checkpoint_path = load_agent_checkpoint(
+        agent,
+        checkpoint=arguments.checkpoint,
+        checkpoint_dir=arguments.checkpoint_dir,
+        required=False,
+    )
 
-        if not checkpoint.is_file():
-            raise FileNotFoundError(f"Checkpoint does not exist: {checkpoint}")
-    else:
-        checkpoint = find_latest_checkpoint(arguments.checkpoint_dir)
-
-    if checkpoint is None:
+    if checkpoint_path is None:
         print("No checkpoint found. Starting from episode 0.")
         return None
 
-    agent.load(checkpoint)
-
-    print(f"Loaded checkpoint: {checkpoint}")
+    print(f"Loaded checkpoint: {checkpoint_path}")
     print(f"Completed episodes: {agent.games_played}")
     print(f"Training steps: {agent.training_steps}")
     print(f"Epsilon: {agent.epsilon:.6f}")
-
-    return checkpoint
-
-
-def save_checkpoint(
-    agent: DQNAgent,
-    checkpoint_dir: Path,
-) -> Path:
-    checkpoint_path = checkpoint_dir / f"snake_{agent.games_played}.pt"
-    temporary_path = checkpoint_path.with_suffix(".pt.tmp")
-
-    agent.save(temporary_path)
-    temporary_path.replace(checkpoint_path)
-
-    print(f"Saved checkpoint: {checkpoint_path}")
 
     return checkpoint_path
 
@@ -161,7 +132,7 @@ def main() -> None:
 
     agent = DQNAgent(seed=37)
 
-    load_checkpoint(agent, arguments)
+    restore_training(agent, arguments)
 
     starting_episode = agent.games_played
     ending_episode = starting_episode + arguments.episodes
@@ -193,12 +164,21 @@ def main() -> None:
             )
 
         if run_episode % arguments.save_every == 0:
-            save_checkpoint(agent, arguments.checkpoint_dir)
+            checkpoint_path = save_agent_checkpoint(
+                agent,
+                arguments.checkpoint_dir,
+            )
+            print(f"Saved checkpoint: {checkpoint_path}")
+
             last_saved_episode = agent.games_played
 
     # Save final checkpoint
     if last_saved_episode != agent.games_played:
-        save_checkpoint(agent, arguments.checkpoint_dir)
+        checkpoint_path = save_agent_checkpoint(
+            agent,
+            arguments.checkpoint_dir,
+        )
+        print(f"Saved checkpoint: {checkpoint_path}")
 
     print(f"Training complete. Total completed episodes: {agent.games_played}")
 

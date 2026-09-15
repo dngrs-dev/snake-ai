@@ -1,4 +1,6 @@
+import numpy as np
 import pygame
+from numpy.typing import NDArray
 
 from snake import Game, Point
 
@@ -124,3 +126,8 @@ class GameRenderer:
             rect,
             border_radius=4,
         )
+
+    def capture_frame(self) -> NDArray[np.uint8]:
+        frame: NDArray[np.uint8] = pygame.surfarray.array3d(self.screen)
+
+        return frame.swapaxes(0, 1).copy()

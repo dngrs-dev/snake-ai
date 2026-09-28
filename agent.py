@@ -8,8 +8,9 @@ import numpy as np
 import torch
 from torch import nn
 
+from encoder import CompactStateEncoder, StateEncoder
 from model import DQN
-from snake import Action, Direction
+from snake import Action
 
 
 @dataclass
@@ -34,8 +35,10 @@ class DQNAgent:
         epsilon_end: float = 0.05,
         epsilon_decay: float = 0.995,
         target_update_frequency: int = 1000,
+        encoder: StateEncoder | None = None,
     ):
         self.rng = random.Random(seed)
+        self.encoder = encoder if encoder is not None else CompactStateEncoder()
 
         if seed is not None:
             torch.manual_seed(seed)
@@ -57,8 +60,13 @@ class DQNAgent:
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.policy_model = DQN().to(self.device)
-        self.target_model = DQN().to(self.device)
+        self.policy_model = DQN(
+            input_size=self.encoder.input_size,
+        ).to(self.device)
+
+        self.target_model = DQN(
+            input_size=self.encoder.input_size,
+        ).to(self.device)
 
         self.target_model.load_state_dict(self.policy_model.state_dict())
         self.target_model.eval()
@@ -71,35 +79,8 @@ class DQNAgent:
         self.loss_function = nn.SmoothL1Loss()
         self.last_loss: float | None = None
 
-    def encode_state(self, state: dict[str, Any]) -> np.ndarray:
-        head = state["snake_head"]
-        food = state["food"]
-        direction = state["direction"]
-
-        food_left = food is not None and food.x < head.x
-        food_right = food is not None and food.x > head.x
-        food_up = food is not None and food.y < head.y
-        food_down = food is not None and food.y > head.y
-
-        return np.array(
-            [
-                state["danger_forward"],
-                state["danger_right"],
-                state["danger_left"],
-                direction == Direction.RIGHT,
-                direction == Direction.LEFT,
-                direction == Direction.UP,
-                direction == Direction.DOWN,
-                food_right,
-                food_left,
-                food_up,
-                food_down,
-            ],
-            dtype=np.float32,
-        )
-
     def choose_action(self, state: dict[str, Any]) -> Action:
-        encoded_state = self.encode_state(state)
+        encoded_state = self.encoder.encode(state)
 
         if self.rng.random() < self.epsilon:
             return self.rng.choice(list(Action))
@@ -132,10 +113,10 @@ class DQNAgent:
         truncated: bool,
     ) -> None:
         experience = Experience(
-            state=self.encode_state(state),
+            state=self.encoder.encode(state),
             action=action,
             reward=float(reward),
-            next_state=self.encode_state(next_state),
+            next_state=self.encoder.encode(next_state),
             terminated=terminated,
             truncated=truncated,
         )

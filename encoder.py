@@ -128,12 +128,48 @@ class OrderedGridStateEncoder:
             )
 
 
+class OrderedGridDangerStateEncoder(OrderedGridStateEncoder):
+    name = "ordered-grid-danger"
+
+    def __init__(
+        self,
+        width: int = 10,
+        height: int = 10,
+    ):
+        super().__init__(
+            width=width,
+            height=height,
+        )
+
+        self.input_size += 3
+
+    def encode(self, state: dict[str, Any]) -> np.ndarray:
+        grid_values = super().encode(state)
+
+        danger_values = np.array(
+            [
+                state["danger_forward"],
+                state["danger_right"],
+                state["danger_left"],
+            ],
+            dtype=np.float32,
+        )
+
+        return np.concatenate(
+            (
+                grid_values,
+                danger_values,
+            )
+        )
+
+
 EncoderFactory = Callable[..., StateEncoder]
 
 
 _ENCODER_FACTORIES: dict[str, EncoderFactory] = {
     CompactStateEncoder.name: CompactStateEncoder,
     OrderedGridStateEncoder.name: OrderedGridStateEncoder,
+    OrderedGridDangerStateEncoder.name: OrderedGridDangerStateEncoder,
 }
 
 

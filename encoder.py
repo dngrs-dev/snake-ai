@@ -1,8 +1,11 @@
+from collections.abc import Callable
 from typing import Any, Protocol
 
 import numpy as np
 
 from snake import Direction
+
+DEFAULT_ENCODER_NAME = "compact"
 
 
 class StateEncoder(Protocol):
@@ -10,6 +13,8 @@ class StateEncoder(Protocol):
     input_size: int
 
     def encode(self, state: dict[str, Any]) -> np.ndarray: ...
+
+    def get_config(self) -> dict[str, Any]: ...
 
 
 class CompactStateEncoder:
@@ -42,3 +47,34 @@ class CompactStateEncoder:
             ],
             dtype=np.float32,
         )
+
+    def get_config(self) -> dict[str, Any]:
+        return {}
+
+
+EncoderFactory = Callable[..., StateEncoder]
+
+
+_ENCODER_FACTORIES: dict[str, EncoderFactory] = {
+    CompactStateEncoder.name: CompactStateEncoder,
+}
+
+
+def available_encoder_names() -> tuple[str, ...]:
+    return tuple(sorted(_ENCODER_FACTORIES))
+
+
+def create_encoder(
+    name: str,
+    config: dict[str, Any] | None = None,
+) -> StateEncoder:
+    try:
+        factory = _ENCODER_FACTORIES[name]
+    except KeyError as error:
+        available = ", ".join(available_encoder_names())
+
+        raise ValueError(
+            f"Unknown encoder {name!r}. Available encoders: {available}."
+        ) from error
+
+    return factory(**(config or {}))

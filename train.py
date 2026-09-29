@@ -3,8 +3,13 @@ from pathlib import Path
 
 from agent import DQNAgent
 from checkpoint_utils import (
-    load_agent_checkpoint,
+    load_configured_agent_checkpoint,
     save_agent_checkpoint,
+)
+from encoder import (
+    DEFAULT_ENCODER_NAME,
+    available_encoder_names,
+    create_encoder,
 )
 from snake import Game
 
@@ -45,6 +50,16 @@ def parse_arguments() -> argparse.Namespace:
         default=Path("checkpoints"),
         help="Directory containing checkpoints (default: checkpoints).",
     )
+    parser.add_argument(
+        "--encoder",
+        choices=available_encoder_names(),
+        default=None,
+        help=(
+            "State encoder for fresh training. When resuming, the encoder is "
+            "read from the checkpoint. If explicitly provided during resume, "
+            "it must match the checkpoint."
+        ),
+    )
 
     resume_group = parser.add_mutually_exclusive_group()
 
@@ -63,30 +78,51 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def restore_training(
-    agent: DQNAgent,
     arguments: argparse.Namespace,
-) -> Path | None:
+) -> DQNAgent:
     if arguments.force:
-        print("Forced fresh start. Existing checkpoints will be ignored.")
-        return None
+        encoder_name = arguments.encoder or DEFAULT_ENCODER_NAME
 
-    checkpoint_path = load_agent_checkpoint(
-        agent,
+        print("Forced fresh start. Existing checkpoints will be ignored.")
+        print(f"Encoder: {encoder_name}")
+
+        return DQNAgent(
+            seed=37,
+            encoder=create_encoder(encoder_name),
+        )
+
+    loaded = load_configured_agent_checkpoint(
         checkpoint=arguments.checkpoint,
         checkpoint_dir=arguments.checkpoint_dir,
         required=False,
+        seed=37,
     )
 
-    if checkpoint_path is None:
+    if loaded is None:
+        encoder_name = arguments.encoder or DEFAULT_ENCODER_NAME
+
         print("No checkpoint found. Starting from episode 0.")
-        return None
+        print(f"Encoder: {encoder_name}")
+
+        return DQNAgent(
+            seed=37,
+            encoder=create_encoder(encoder_name),
+        )
+
+    agent, checkpoint_path = loaded
+
+    if arguments.encoder is not None and arguments.encoder != agent.encoder.name:
+        raise ValueError(
+            f"Requested encoder {arguments.encoder}, but checkpoint uses {agent.encoder.name}."
+        )
 
     print(f"Loaded checkpoint: {checkpoint_path}")
+    print(f"Encoder: {agent.encoder.name}")
     print(f"Completed episodes: {agent.games_played}")
     print(f"Training steps: {agent.training_steps}")
     print(f"Epsilon: {agent.epsilon:.6f}")
 
-    return checkpoint_path
+    return agent
 
 
 def train_episode(game: Game, agent: DQNAgent) -> int:
@@ -130,9 +166,7 @@ def main() -> None:
         seed=81,
     )
 
-    agent = DQNAgent(seed=37)
-
-    restore_training(agent, arguments)
+    agent = restore_training(arguments)
 
     starting_episode = agent.games_played
     ending_episode = starting_episode + arguments.episodes

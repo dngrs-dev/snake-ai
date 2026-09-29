@@ -8,7 +8,11 @@ import numpy as np
 import torch
 from torch import nn
 
-from encoder import CompactStateEncoder, StateEncoder
+from encoder import (
+    DEFAULT_ENCODER_NAME,
+    CompactStateEncoder,
+    StateEncoder,
+)
 from model import DQN
 from snake import Action
 
@@ -270,6 +274,12 @@ class DQNAgent:
         )
 
         checkpoint = {
+            "checkpoint_version": 1,
+            "encoder": {
+                "name": self.encoder.name,
+                "config": self.encoder.get_config(),
+                "input_size": self.encoder.input_size,
+            },
             "policy_model": self.policy_model.state_dict(),
             "target_model": self.target_model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
@@ -287,6 +297,8 @@ class DQNAgent:
             weights_only=False,
         )
 
+        self._validate_checkpoint_encoder(checkpoint)
+
         self.policy_model.load_state_dict(checkpoint["policy_model"])
 
         self.target_model.load_state_dict(checkpoint["target_model"])
@@ -298,3 +310,36 @@ class DQNAgent:
         self.training_steps = checkpoint["training_steps"]
 
         self.target_model.eval()
+
+    def _validate_checkpoint_encoder(
+        self,
+        checkpoint: dict[str, Any],
+    ) -> None:
+        encoder_metadata = checkpoint.get("encoder")
+
+        if encoder_metadata is None:
+            if self.encoder.name != DEFAULT_ENCODER_NAME:
+                raise ValueError(
+                    "Checkpoint does not contain encoder metadata, but the agent uses a non-default encoder."
+                )
+
+            return
+
+        checkpoint_name = encoder_metadata["name"]
+        checkpoint_config = encoder_metadata.get("config", {})
+        checkpoint_input_size = encoder_metadata["input_size"]
+
+        if checkpoint_name != self.encoder.name:
+            raise ValueError(
+                f"Checkpoint uses encoder {checkpoint_name}, but the agent uses {self.encoder.name}."
+            )
+
+        if checkpoint_config != self.encoder.get_config():
+            raise ValueError(
+                f"Checkpoint encoder configuration does not match the agent: {checkpoint_config} != {self.encoder.get_config()}."
+            )
+
+        if checkpoint_input_size != self.encoder.input_size:
+            raise ValueError(
+                f"Checkpoint encoder input size does not match the agent: {checkpoint_input_size} != {self.encoder.input_size}."
+            )

@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from agent import DQNAgent
+import torch
 
+from agent import DQNAgent
+from encoder import DEFAULT_ENCODER_NAME, StateEncoder, create_encoder
 
 DEFAULT_CHECKPOINT_DIR = Path("checkpoints")
 
@@ -40,6 +40,72 @@ def resolve_checkpoint(
         return checkpoint
 
     return find_latest_checkpoint(checkpoint_dir)
+
+
+def read_checkpoint_encoder(
+    checkpoint_path: str | Path,
+) -> StateEncoder:
+    checkpoint_path = Path(checkpoint_path)
+
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location="cpu",
+        weights_only=False,
+    )
+
+    encoder_metadata = checkpoint.get("encoder")
+
+    if encoder_metadata is None:
+        return create_encoder(DEFAULT_ENCODER_NAME)
+
+    encoder_name = encoder_metadata["name"]
+    encoder_config = encoder_metadata.get("config", {})
+
+    encoder = create_encoder(
+        encoder_name,
+        config=encoder_config,
+    )
+
+    checkpoint_input_size = encoder_metadata["input_size"]
+
+    if checkpoint_input_size != encoder.input_size:
+        raise ValueError(
+            f"Checkpoint declares encoder input size {checkpoint_input_size}, but reconstructed encoder {encoder_name} has input size {encoder.input_size}."
+        )
+
+    return encoder
+
+
+def load_configured_agent_checkpoint(
+    checkpoint: str | Path | None = None,
+    checkpoint_dir: str | Path = DEFAULT_CHECKPOINT_DIR,
+    *,
+    required: bool = True,
+    seed: int | None = None,
+) -> tuple[DQNAgent, Path] | None:
+    checkpoint_path = resolve_checkpoint(
+        checkpoint=checkpoint,
+        checkpoint_dir=checkpoint_dir,
+    )
+
+    if checkpoint_path is None:
+        if required:
+            raise FileNotFoundError(
+                f"No .pt checkpoints found in {Path(checkpoint_dir)}"
+            )
+
+        return None
+
+    encoder = read_checkpoint_encoder(checkpoint_path)
+
+    agent = DQNAgent(
+        seed=seed,
+        encoder=encoder,
+    )
+
+    agent.load(checkpoint_path)
+
+    return agent, checkpoint_path
 
 
 def load_agent_checkpoint(

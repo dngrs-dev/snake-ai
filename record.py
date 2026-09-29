@@ -7,8 +7,7 @@ import imageio.v2 as imageio
 import numpy as np
 from numpy.typing import NDArray
 
-from agent import DQNAgent
-from checkpoint_utils import load_agent_checkpoint
+from checkpoint_utils import load_configured_agent_checkpoint
 from renderer import GameRenderer
 from snake import Game
 
@@ -137,17 +136,16 @@ def main() -> None:
         seed=arguments.seed,
     )
 
-    agent = DQNAgent()
-
-    checkpoint_path = load_agent_checkpoint(
-        agent,
+    loaded = load_configured_agent_checkpoint(
         checkpoint=arguments.checkpoint,
         checkpoint_dir=arguments.checkpoint_dir,
         required=True,
     )
 
-    if checkpoint_path is None:
+    if loaded is None:
         raise RuntimeError("A checkpoint is required for recording.")
+
+    agent, checkpoint_path = loaded
 
     # Evaluation must not contain random exploration.
     agent.epsilon = 0.0
@@ -169,6 +167,7 @@ def main() -> None:
     running = True
 
     print(f"Checkpoint: {checkpoint_path}")
+    print(f"Encoder: {agent.encoder.name}")
     print(f"Recording: {output_path}")
     print(f"Games requested: {arguments.games}")
 

@@ -1,8 +1,7 @@
 import argparse
 from pathlib import Path
 
-from agent import DQNAgent
-from checkpoint_utils import load_agent_checkpoint
+from checkpoint_utils import load_configured_agent_checkpoint
 from renderer import GameRenderer
 from snake import Game
 
@@ -54,20 +53,23 @@ def main() -> None:
         seed=arguments.seed,
     )
 
-    agent = DQNAgent()
-
-    checkpoint_path = load_agent_checkpoint(
-        agent,
+    loaded = load_configured_agent_checkpoint(
         checkpoint=arguments.checkpoint,
         checkpoint_dir=arguments.checkpoint_dir,
         required=True,
     )
+
+    if loaded is None:
+        raise RuntimeError("A checkpoint is required for playback.")
+
+    agent, checkpoint_path = loaded
 
     # Disable exploration during evaluation.
     agent.epsilon = 0.0
     agent.policy_model.eval()
 
     print(f"Loaded checkpoint: {checkpoint_path}")
+    print(f"Encoder: {agent.encoder.name}")
     print(f"Training episodes: {agent.games_played}")
     print(f"Training steps: {agent.training_steps}")
 
